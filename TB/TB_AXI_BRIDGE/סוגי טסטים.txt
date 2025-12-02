@@ -1,0 +1,150 @@
+מסגרת מרובת beats:
+
+N beats מלאים (strict keep=all ones), TLAST על האחרון.
+
+לוודא:
+
+מספר segments נכון (N * MAX_SEGS_PER_BEAT),
+
+אין חורים ב-frame (data连续),
+
+sop רק בסגמנט הראשון של כל frame,
+
+eop רק באחרון.
+
+
+
+tkeep חלקי על beat אחרון:
+
+כמה וריאנטים:
+
+tkeep של beat אחרון עם num_bytes = 1, 2, …, BYTES_PER_SEG-1.
+
+מצב שבו כל frame קטן מ-BYTES_PER_SEG (beat אחד עם מעט בייטים).
+
+לוודא:
+
+cl_tx_keep של הסגמנט האחרון מחזיק מסיכה נכונה בדיוק למספר הבייטים.
+
+אין סגמנט "מיותר" נוסף.
+
+
+
+
+strict_tkeep_en = 1 – חוקי ולא חוקי:
+
+beats לא אחרונים עם keep != all ones ⇒ לצפות ev_err_tkeep_illegal pulse.
+
+beat אחרון עם תבנית לא מונוטונית (למשל 1110_0111) ⇒ שוב event.
+
+beats חוקיים לחלוטין ⇒ לא לקבל event.
+
+במקביל לבדוק שה-data ממשיך לזרום כרגיל (האירוע הוא טלמטריה, לא stop).
+
+
+
+
+strict_tkeep_en = 0:
+
+אותם דפוסי keep "מוזרים", אבל הפעם WITHOUT event.
+
+reference model יכול להמשיך להתייחס לנתונים כאילו הם "קומפקטיים" (זה מה שה-DUT עושה בפועל עם popcount).
+
+
+
+
+Backpressure בצד ה-Client:
+
+Random cl_tx_ready (יחזור/יפול),
+
+Pattern של stall ארוך באמצע beat/אמצע frame.
+
+לוודא:
+
+בזמן valid && !ready הנתונים, keep, sop/eop, user – יציבים.
+
+אין החזרה (duplicate) או דילוג על סגמנטים.
+
+stat_tx_stall_cycles מתאים למספר ה-cycles שבהם valid && !ready.
+
+
+
+
+Backpressure בצד ה-IP – FIFO almost full/full:
+
+לייצר זרם תנועה מהיר מה-IP (tvalid quasi constant),
+
+לגרום ל-FIFO להתמלא (ע"י הורדת cl_tx_ready ועוד).
+
+לבדוק:
+
+s_axis_tready יורד כש-fifo_level >= tx_fifo_afull_thr.
+
+אין pushes ל-FIFO כשהוא full (למעשה זה assert רצוי: !(fifo_push && fifo_full)).
+
+במידת הצורך אפשר טסט "fault injection" שבו כופים full ו-push יחד כדי לראות ש-ev_err_overflow_tx באמת עולה, אם חשוב לך לבדוק את זה.
+
+
+
+
+
+bridge_enable:
+
+להתחיל טסט כשהוא 0 → לצפות שלא ייצא שום דבר ב-cl_tx_*, וגם tready=0.
+
+להעלות ל-1 → מסגרת תחיל לזרום.
+
+להוריד ל-0 בזמן idle – לא אמור לקרות כלום (אין drop, אין event).
+
+שילוב עם drop_on_midreset (סעיף הבא).
+
+
+
+
+drop_on_midreset:
+
+drop_on_midreset = 1, bridge_enable יורד מ-1 ל-0:
+
+בזמן frame פעיל (in_packet=1),
+
+בזמן שיש beats ב-FIFO אבל טרם התחיל שידור החוצה.
+
+לוודא:
+
+ev_err_midreset_drop pulse.
+
+הנתונים שנשארו "בתוך המערכת" נזרקים (אין tail frame שיוצא אחרי re-enable).
+
+אחרי שמחזירים bridge_enable ל-1, אפשר לשלוח frames חדשים נקיים, בלי mixing עם מה שנזרק.
+
+
+
+
+פרמטריזציה:
+
+להריץ לפחות קומבינציות שונות:
+
+DATA_W=256, IF_W=64 (העיקרית).
+
+אולי DATA_W=128, IF_W=64.
+
+אולי DATA_W=64, IF_W=64 (פינתית שבה אין סיריאליזציה).
+
+לוודא שה-logic ל-MAX_SEGS_PER_BEAT וכו’ מתנהג טוב.
+
+
+
+
+טלמטריה:
+
+עבור כל טסט, ה-scoreboard צובר:
+
+bytes נכנסים → משווה ל-stat_tx_bytes.
+
+frames שנסגרו → משווה ל-stat_tx_frames.
+
+stall cycles → משווה ל-stat_tx_stall_cycles.
+
+עבור FIFO level אפשר לעשות:
+
+assertions שגם אם לא מדויקים cycle-by-cycle, אין מצבים אבסורדיים (למשל level גדול מה-DEPTH).
