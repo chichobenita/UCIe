@@ -6,6 +6,7 @@ interface axi_stream_if #(
   input  logic clk,
   input  logic rst_n
 );
+  // AXI-Stream payload and sideband signals
   logic [DATA_W-1:0]         tdata;
   logic [DATA_W/8-1:0]       tkeep;
   logic [TUSER_W-1:0]        tuser;
@@ -13,19 +14,19 @@ interface axi_stream_if #(
   logic                      tready;
   logic                      tlast;
 
-  // modport ל-DUT
+  // Modport towards the DUT (AXI-Stream slave)
   modport dut (
     input  tdata, tkeep, tuser, tvalid, tlast,
     output tready
   );
 
-  // modport ל-Driver
+  // Modport towards the Driver (AXI-Stream master in TB)
   modport drv (
     input  clk, rst_n, tready,
     output tdata, tkeep, tuser, tvalid, tlast
   );
 
-  // modport למוניטור/דיבאג
+  // Modport for monitor / debug (passive observation)
   modport mon (
     input clk, rst_n, tdata, tkeep, tuser, tvalid, tready, tlast
   );
@@ -39,28 +40,36 @@ interface client_if #(
   input  logic clk,
   input  logic rst_n
 );
+  // Client-side data-path: segmented output of the bridge
   logic [IF_W-1:0]          data;
   logic [IF_W/8-1:0]        keep;
   logic [TUSER_W-1:0]       user;
   logic                     valid;
   logic                     ready;
-  logic                     sop;
-  logic                     eop;
+  logic                     sop;   // Start-of-packet
+  logic                     eop;   // End-of-packet
 
-  // דגימה אחרי שה-DUT עדכן את ה-Qים
+  // Clocking block: sampled after DUT has updated its outputs / FIFOs
   clocking cb @(posedge clk);
     default input #1step output #0;
     input data, keep, user, valid, ready, sop, eop;
   endclocking
 
-  modport dut (output data, keep, user, valid, sop, eop,
-               input  ready);
+  // Modport towards the DUT (bridge drives Client-IF)
+  modport dut (
+    output data, keep, user, valid, sop, eop,
+    input  ready
+  );
 
-  modport drv (input  clk, rst_n, data, keep, user, valid, sop, eop,
-               output ready);
+  // Modport towards a driver / stimulus that controls ready
+  modport drv (
+    input  clk, rst_n, data, keep, user, valid, sop, eop,
+    output ready
+  );
 
-  modport mon (clocking cb, input rst_n);
+  // Modport towards monitor (uses clocking block, plus rst_n)
+  modport mon (
+    clocking cb,
+    input    rst_n
+  );
 endinterface
-
-
-

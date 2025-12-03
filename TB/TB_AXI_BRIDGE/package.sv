@@ -1,7 +1,7 @@
 // axi_bridge_ip_tx_tb_pkg.sv
 package axi_bridge_ip_tx_tb_pkg;
 
-  // אותם פרמטרים כמו ב-DUT (לעכשיו)
+  // Same parameters as the DUT (for now)
   parameter int DATA_W   = 256;
   parameter int IF_W     = 64;
   parameter int TUSER_W  = 16;
@@ -10,7 +10,7 @@ package axi_bridge_ip_tx_tb_pkg;
   localparam int BYTES_PER_SEG  = IF_W   / 8;
 
   // -----------------------------
-  // טיפוסים ל-beat ול-frame בצד ה-IP
+  // Types for AXI-Stream beat and frame on the IP side
   // -----------------------------
   typedef struct {
     logic [DATA_W-1:0]         data;
@@ -20,7 +20,7 @@ package axi_bridge_ip_tx_tb_pkg;
   } axi_beat_t;
 
   class axi_frame;
-    // כל frame מורכב מרשימת beats
+    // Each frame is composed of a dynamic list of beats
     axi_beat_t beats[$];
 
     function void add_beat(axi_beat_t b);
@@ -29,7 +29,7 @@ package axi_bridge_ip_tx_tb_pkg;
   endclass
 
   // -----------------------------
-  // טיפוס לסגמנט בצד ה-Client
+  // Segment type on the Client side
   // -----------------------------
   typedef struct {
     logic [IF_W-1:0]           data;
@@ -41,14 +41,14 @@ package axi_bridge_ip_tx_tb_pkg;
 
   // -----------------------------
   // Reference Model:
-  // מקבל frame ומחזיר רשימת segments צפויים
+  // Gets a frame and returns the expected list of segments
   // -----------------------------
 function automatic void ref_build_segments(
     input  axi_frame   frame,
     output tx_seg_t    segs[$]
 );
-  // --- הכרזות בראש הפונקציה בלבד ---
-  byte unsigned        bytes[$];      // אוסף את כל הבייטים התקפים ברצף
+  // --- Declarations at top of function only ---
+  byte unsigned        bytes[$];      // Collects all valid bytes in order
   logic [TUSER_W-1:0]  frame_user;
   int                  num_bytes;
   int                  num_segs;
@@ -57,19 +57,19 @@ function automatic void ref_build_segments(
   byte unsigned        tmp;
   tx_seg_t             seg;
 
-  // נתחיל עבודה
+  // Start work
   segs.delete();
 
   if (frame.beats.size() == 0) return;
 
   frame_user = frame.beats[0].user;
 
-  // 1. אוספים בייטים מתוך ה-beats לפי keep
+  // 1. Collect bytes from beats according to the keep mask
   foreach (frame.beats[i]) begin
     beat = frame.beats[i];
     for (j = 0; j < BYTES_PER_BEAT; j++) begin
       if (beat.keep[j]) begin
-        // byte j = bits [8*j +: 8] – אותו כיווניות כמו ב-DUT
+        // Byte j = bits [8*j +: 8] – same bit ordering as in the DUT
         tmp = beat.data[j*8 +: 8];
         bytes.push_back(tmp);
       end
@@ -81,9 +81,9 @@ function automatic void ref_build_segments(
 
   num_segs  = (num_bytes + BYTES_PER_SEG - 1) / BYTES_PER_SEG;
 
-  // 2. מחלקים לבלאקים של BYTES_PER_SEG ומייצרים segments
+  // 2. Split into BYTES_PER_SEG-sized blocks and create segments
   for (s = 0; s < num_segs; s++) begin
-    // מאפסים seg
+    // Clear current segment
     seg.data = '0;
     seg.keep = '0;
     seg.user = frame_user;
@@ -103,10 +103,10 @@ function automatic void ref_build_segments(
 endfunction
 
   // --------------------------------------------------
-  // Driver – מוציא frame על אינטרפייס ה-AXI-Stream
+  // Driver – sends a frame on the AXI-Stream interface
   // --------------------------------------------------
-  // ההגדרה של axi_stream_if נמצאת בקובץ אחר, אבל אנחנו
-  // משתמשים בשמה כאן (modport drv).
+  // The definition of axi_stream_if is in another file,
+  // but we only use its name here (modport drv).
 typedef virtual axi_stream_if #(DATA_W, TUSER_W) drv_axi_vif_t;
 
 class axi_driver;
@@ -117,7 +117,7 @@ class axi_driver;
   endfunction
 
   task drive_frame(axi_frame f);
-    // דיפולט
+    // Default values
     vif.tvalid <= 1'b0;
     vif.tlast  <= 1'b0;
     vif.tdata  <= '0;
@@ -127,24 +127,24 @@ class axi_driver;
     foreach (f.beats[i]) begin
       axi_beat_t b = f.beats[i];
 
-      // מחכים לפוז' כדי ליישר לשעון
+      // Wait for posedge to align with clock
       @(posedge vif.clk);
 
-      // מעמיסים beat על הקווים ומעלים valid
+      // Drive beat onto the bus and assert valid
       vif.tdata  <= b.data;
       vif.tkeep  <= b.keep;
       vif.tuser  <= b.user;
       vif.tlast  <= b.last;
       vif.tvalid <= 1'b1;
 
-      // עכשיו מחכים ל-handshake אמיתי:
-      // valid=1 כבר, מחכים עד ש-tready יהיה 1 באחד הפוז'ים.
+      // Wait for a real handshake:
+      // valid is already 1, wait until tready is 1 on some posedge.
       do begin
         @(posedge vif.clk);
       end while (!vif.tready);
 
-      // בפוז' האחרון קרה ה-handshake (valid=1 && ready=1),
-      // עכשיו אנחנו מורידים valid כדי שלא יהיה עוד handshake על אותו beat.
+      // On the last posedge we had a handshake (valid=1 && ready=1),
+      // now deassert valid so we don't re-handshake the same beat.
       vif.tvalid <= 1'b0;
       vif.tlast  <= 1'b0;
     end
@@ -152,7 +152,7 @@ class axi_driver;
 endclass
 
   // --------------------------------------------------
-  // Monitor – אוסף segments בצד ה-Client-IF
+  // Monitor – collects segments on the Client-IF side
   // --------------------------------------------------
 typedef virtual client_if #(IF_W, TUSER_W) mon_client_vif_t;
 
@@ -166,7 +166,7 @@ class client_monitor;
 
   task run();
     forever begin
-      @(vif.cb);  // אירוע clocking – אחרי #1step
+      @(vif.cb);  // Clocking block event – sampled after #1step
       if (vif.cb.valid && vif.cb.ready) begin
         tx_seg_t s;
         s.data = vif.cb.data;
@@ -185,7 +185,7 @@ endclass
 
 
   // --------------------------------------------------
-  // Scoreboard – משווה expected מול actual
+  // Scoreboard – compares expected vs. actual segments
   // --------------------------------------------------
 class scoreboard;
   client_monitor mon;
@@ -201,14 +201,14 @@ class scoreboard;
 
     ref_build_segments(f, exp_segs);
 
-    // מחכים עד שנקבל לפחות את מספר הסגמנטים הצפוי
+    // Wait until we have at least the expected number of segments
     wait (mon.seg_q.size() >= exp_segs.size());
 
-    // השוואה אחד-לאחד
+    // One-to-one comparison
     foreach (exp_segs[i]) begin
     tx_seg_t exp, act;
     exp = exp_segs[i];
-    act = mon.seg_q.pop_front();  // לוקח את הסגמנט הבא מתוך התור
+    act = mon.seg_q.pop_front();  // Take the next segment from the queue
 
     if (act.data !== exp.data   ||
         act.keep !== exp.keep   ||
