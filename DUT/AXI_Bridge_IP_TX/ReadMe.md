@@ -14,6 +14,9 @@
 
 ---
 
+![Uploading image.png…]()
+
+
 ## 2. Block-level architecture
 ### 2.1 Dataflow
 1) **Ingress (`axi_bridge_ip_tx_ingress`)**: Accept AXI-Stream beats, apply backpressure, validate `tkeep` (optional), pack FIFO entries, and generate byte-increment hints.
