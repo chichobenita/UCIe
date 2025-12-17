@@ -12,7 +12,7 @@
 **Out of scope (future layers):**
 - UCIe Link-layer framing/CRC/replay/credits (unless/ until integrated above/below this block).
 
-![Flowchart](UCIe/DUT/AXI_Bridge_IP_TX/FSM_axi_bridge.png)
+![Flowchart](FSM_axi_bridge.png)
 ---
 
 
