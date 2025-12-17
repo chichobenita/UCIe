@@ -14,8 +14,6 @@
 
 ---
 
-![Uploading image.png…]()
-
 
 ## 2. Block-level architecture
 ### 2.1 Dataflow
